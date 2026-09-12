@@ -6,8 +6,10 @@ import { registerPluginHttpRoute } from "../plugins/http-registry.js";
 import { getPluginInstance } from "../plugins/plugin-instance-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createChannelTestPluginBase } from "../test-utils/channel-plugins.js";
-import { createChannelManager } from "./server-channels.js";
-import type { RecoveryFixtureFactory } from "./server-plugin-reload.recovery.test-support.js";
+import {
+  createRecoveryChannelManager,
+  type RecoveryFixtureFactory,
+} from "./server-plugin-reload.recovery.test-support.js";
 
 export async function verifyPreparedSidecarRecovery(
   createFixture: RecoveryFixtureFactory,
@@ -66,12 +68,7 @@ export async function verifyPreparedSidecarRecovery(
       },
     },
   ];
-  const manager = createChannelManager({
-    getRuntimeConfig: fixture.getConfig,
-    getPluginRegistry: () => fixture.registryOwner.registry,
-    channelLogs: {},
-    channelRuntimeEnvs: {},
-  });
+  const manager = createRecoveryChannelManager(fixture);
   fixture.runtime.channelManager = manager;
   let stopping: Promise<void> | undefined;
   try {
@@ -93,7 +90,9 @@ export async function verifyPreparedSidecarRecovery(
     expect(start).not.toHaveBeenCalled();
     expect(signals).toHaveLength(1);
     expect(signals[0]?.aborted).toBe(mode === "aborted-predecessor");
-    expect(manager.getRuntimeSnapshot(channelId).channels[channelId]).toMatchObject({
+    expect(
+      manager.getRuntimeSnapshot({ channelId, inspectAccounts: false }).channels[channelId],
+    ).toMatchObject({
       running: true,
       connected: true,
       lifecycle: "ready",
@@ -283,12 +282,7 @@ export async function verifyIndependentPostCommitActivation(
       throw failure;
     };
   }
-  const manager = createChannelManager({
-    getRuntimeConfig: fixture.getConfig,
-    getPluginRegistry: () => fixture.registryOwner.registry,
-    channelLogs: {},
-    channelRuntimeEnvs: {},
-  });
+  const manager = createRecoveryChannelManager(fixture);
   fixture.runtime.channelManager = manager;
   const channelIds = ["first-channel", "healthy-channel", "removed-channel"];
   try {
@@ -385,12 +379,7 @@ export async function verifyLifecycleHookSettlement(
       });
     },
   });
-  const manager = createChannelManager({
-    getRuntimeConfig: fixture.getConfig,
-    getPluginRegistry: () => fixture.registryOwner.registry,
-    channelLogs: {},
-    channelRuntimeEnvs: {},
-  });
+  const manager = createRecoveryChannelManager(fixture);
   fixture.runtime.channelManager = manager;
   await manager.startChannel("hook-dependent");
   const reloading = fixture.reload().catch((error: unknown) => error);
@@ -484,12 +473,7 @@ export async function verifyIndependentRollbackRestoration(
       },
     }),
   }));
-  const manager = createChannelManager({
-    getRuntimeConfig: fixture.getConfig,
-    getPluginRegistry: () => fixture.registryOwner.registry,
-    channelLogs: {},
-    channelRuntimeEnvs: {},
-  });
+  const manager = createRecoveryChannelManager(fixture);
   fixture.runtime.channelManager = manager;
   try {
     await manager.startChannel("first-restore");
@@ -510,13 +494,18 @@ export async function verifyIndependentRollbackRestoration(
         },
       });
       expect(
-        manager.getRuntimeSnapshot("healthy-restore").reloadingChannels?.has("healthy-restore"),
+        manager
+          .getRuntimeSnapshot({ channelId: "healthy-restore", inspectAccounts: false })
+          .reloadingChannels?.has("healthy-restore"),
       ).toBe(true);
       expect(starts).toEqual(["first-restore", "healthy-restore"]);
     } else {
       expect(result).toMatchObject({ cause: { errors: [expect.any(Error), failure] } });
       expect(starts).toEqual(["first-restore", "healthy-restore", "healthy-restore"]);
-      expect(manager.getRuntimeSnapshot("healthy-restore").reloadingChannels?.size ?? 0).toBe(0);
+      expect(
+        manager.getRuntimeSnapshot({ channelId: "healthy-restore", inspectAccounts: false })
+          .reloadingChannels?.size ?? 0,
+      ).toBe(0);
     }
     expect(fixture.siblingStart).toHaveBeenCalledOnce();
     expect(fixture.siblingStop).not.toHaveBeenCalled();
