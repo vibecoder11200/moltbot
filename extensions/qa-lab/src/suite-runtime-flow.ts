@@ -22,6 +22,10 @@ import { resolveQaLiveTurnTimeoutMs } from "./live-timeout.js";
 import * as modelSwitchEval from "./model-switch-eval.js";
 import { runQaCli } from "./qa-cli-process.js";
 import * as runtimeToolFixture from "./runtime-tool-fixture.js";
+import {
+  formatToolSearchDiscoveryReceipt,
+  requireToolSearchDiscoveryEvidence,
+} from "./runtime-tool-search-evidence.js";
 import type { QaSeedScenarioWithSource } from "./scenario-catalog.js";
 import { runScenarioFlow } from "./scenario-flow-runner.js";
 import { createQaScenarioRuntimeApi, type QaScenarioRuntimeEnv } from "./scenario-runtime-api.js";
@@ -77,6 +81,8 @@ const qaSuiteScenarioIdentityDeps = {
   buildAgentSessionKey,
   resolveAgentRoute,
   normalizeLowercaseStringOrEmpty,
+  formatToolSearchDiscoveryReceipt,
+  requireToolSearchDiscoveryEvidence,
 };
 
 export async function runQaSuiteScenarioSteps(
@@ -168,18 +174,6 @@ function createQaSuiteScenarioDeps(
     }
     return params.env.gateway.logs?.() ?? "";
   };
-  const readGatewayLogsForSentinels = (options?: Parameters<typeof scanGatewayLogSentinels>[1]) => {
-    if (monotonicGatewayLogs && isValidGatewayLogMark(options?.since)) {
-      return {
-        logs: monotonicGatewayLogs.readSince(options.since),
-        options: { ...options, since: 0 },
-      };
-    }
-    return {
-      logs: params.env.gateway.logs?.(),
-      options: { ...options, since: 0 },
-    };
-  };
   return {
     ...qaSuiteScenarioIdentityDeps,
     runScenario: params.runScenario,
@@ -206,14 +200,10 @@ function createQaSuiteScenarioDeps(
       }
       return fullLegacyGatewayLogSnapshotMark;
     },
-    scanGatewayLogSentinels: (options?: Parameters<typeof scanGatewayLogSentinels>[1]) => {
-      const input = readGatewayLogsForSentinels(options);
-      return scanGatewayLogSentinels(input.logs, input.options);
-    },
-    assertNoGatewayLogSentinels: (options?: Parameters<typeof assertNoGatewayLogSentinels>[1]) => {
-      const input = readGatewayLogsForSentinels(options);
-      return assertNoGatewayLogSentinels(input.logs, input.options);
-    },
+    scanGatewayLogSentinels: (options?: Parameters<typeof scanGatewayLogSentinels>[1]) =>
+      scanGatewayLogSentinels(readGatewayLogs(options?.since), { ...options, since: 0 }),
+    assertNoGatewayLogSentinels: (options?: Parameters<typeof assertNoGatewayLogSentinels>[1]) =>
+      assertNoGatewayLogSentinels(readGatewayLogs(options?.since), { ...options, since: 0 }),
     runRuntimeToolFixture: async (
       envArg: QaSuiteScenarioFlowEnv,
       configArg: Record<string, unknown>,

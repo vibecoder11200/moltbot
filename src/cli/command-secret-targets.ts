@@ -1,6 +1,7 @@
 // Command-specific secret target policy. Each exported helper returns the config secret IDs
 // a command may inspect, with optional concrete-path filters for selected providers/accounts.
 import { isDeepStrictEqual } from "node:util";
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
@@ -77,13 +78,6 @@ const STATIC_STATUS_TARGET_IDS = [
   "agents.entries.*.memory.search.remote.apiKey",
 ] as const;
 
-function idsByPrefix(prefixes: readonly string[]): string[] {
-  return listSecretTargetRegistryEntries()
-    .map((entry) => entry.id)
-    .filter((id) => prefixes.some((prefix) => id.startsWith(prefix)))
-    .toSorted();
-}
-
 type CommandSecretTargetScope = {
   targetIds: Set<string>;
   allowedPaths?: Set<string>;
@@ -96,8 +90,10 @@ const cachedCapabilityWebTargetIds: Partial<Record<WebCapability, string[]>> = {
 let cachedChannelSecretTargetIds: string[] | undefined;
 
 function getChannelSecretTargetIds(): string[] {
-  cachedChannelSecretTargetIds ??= idsByPrefix(["channels."]);
-  return cachedChannelSecretTargetIds;
+  return (cachedChannelSecretTargetIds ??= listSecretTargetRegistryEntries()
+    .map((entry) => entry.id)
+    .filter((id) => id.startsWith("channels."))
+    .toSorted());
 }
 
 function pluginWebCredentialConfigPath(entry: {
@@ -136,16 +132,6 @@ function isConfiguredSecretCandidate(value: unknown): boolean {
 }
 
 type WebCapability = "search" | "fetch";
-
-function resolveWebConfig(
-  config: OpenClawConfig,
-  kind: WebCapability,
-): Record<string, unknown> | undefined {
-  const web = config.tools?.web?.[kind];
-  return web && typeof web === "object" && !Array.isArray(web)
-    ? (web as Record<string, unknown>)
-    : undefined;
-}
 
 function resolveWebProviders(
   config: OpenClawConfig,
@@ -233,11 +219,7 @@ function withSelectedWebProviderForDiscovery(
   const next = structuredClone(config);
   const tools = (next.tools ??= {});
   const web = (tools.web ??= {});
-  const existing = web[kind];
-  web[kind] =
-    existing && typeof existing === "object" && !Array.isArray(existing)
-      ? { ...existing, provider: providerId }
-      : { provider: providerId };
+  web[kind] = { ...asOptionalRecord(web[kind]), provider: providerId };
   return next;
 }
 
@@ -635,7 +617,7 @@ function getCapabilityWebCommandSecretTargets(
   kind: WebCapability,
   providerId?: string | null,
 ): CommandSecretTargetScope {
-  const web = resolveWebConfig(config, kind);
+  const web = asOptionalRecord(config.tools?.web?.[kind]);
   if (web?.enabled === false) {
     return {
       targetIds: new Set(getCapabilityWebTargetIds(kind)),
